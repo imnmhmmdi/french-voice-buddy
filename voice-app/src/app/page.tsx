@@ -7,42 +7,116 @@ import { ConversationProvider, useConversation } from "@elevenlabs/react";
 
 const AGENT_ID = "agent_1401kn7sjz62fc4t9r77y7zbnt3t";
 
+type QualificationTier =
+  | "qualified"
+  | "partial"
+  | "not_qualified"
+  | "pending";
+
+const LISTING_OBERKAMPF =
+  "Appartement 2 pièces - 45m², rue Oberkampf, Paris 11e — 1 200€/mois";
+const LISTING_MOUFFETARD =
+  "Studio meublé - 22m², rue Mouffetard, Paris 5e — 850€/mois";
+
+function deriveDiscussedListing(messages: MessagePayload[]): string {
+  const corpus = messages.map((m) => m.message ?? "").join("\n");
+  if (/Oberkampf/i.test(corpus)) return LISTING_OBERKAMPF;
+  if (/Mouffetard/i.test(corpus)) return LISTING_MOUFFETARD;
+  return "Annonce non identifiée";
+}
+
+function agentMessageQualificationFlags(text: string): {
+  qualified: boolean;
+  partial: boolean;
+  notQualified: boolean;
+} {
+  const lower = text.toLowerCase();
+  const hasProfil = /\bprofil\b/i.test(text);
+  const hasPositiveSignal =
+    /\bsolide\b/i.test(text) ||
+    /\bstrong\b/i.test(text) ||
+    /\bqualifié\b/i.test(text) ||
+    /\barrange\b/i.test(text) ||
+    /\bprioritize\b/i.test(text) ||
+    /contact you within/i.test(text);
+
+  return {
+    qualified: hasProfil && hasPositiveSignal,
+    partial:
+      lower.includes("could work") ||
+      lower.includes("additional documents") ||
+      lower.includes("flag your file"),
+    notQualified:
+      lower.includes("difficile") ||
+      lower.includes("unfortunately") ||
+      lower.includes("minimum income") ||
+      lower.includes("not meet") ||
+      lower.includes("not enough"),
+  };
+}
+
+function deriveQualificationTier(messages: MessagePayload[]): QualificationTier {
+  let anyQualified = false;
+  let anyPartial = false;
+  let anyNotQualified = false;
+
+  for (const m of messages) {
+    if (m.role !== "agent") continue;
+    const f = agentMessageQualificationFlags(m.message ?? "");
+    if (f.notQualified) anyNotQualified = true;
+    if (f.partial) anyPartial = true;
+    if (f.qualified) anyQualified = true;
+  }
+
+  if (anyNotQualified) return "not_qualified";
+  if (anyPartial) return "partial";
+  if (anyQualified) return "qualified";
+  return "pending";
+}
+
+const QUALIFICATION_LABELS: Record<QualificationTier, string> = {
+  qualified: "Qualifié",
+  partial: "Partiellement qualifié",
+  not_qualified: "Non qualifié",
+  pending: "En attente de qualification",
+};
+
+function qualificationCardStyles(tier: QualificationTier): {
+  borderClass: string;
+  labelClass: string;
+} {
+  switch (tier) {
+    case "qualified":
+      return {
+        borderClass: "border-l-emerald-500",
+        labelClass: "text-emerald-700",
+      };
+    case "partial":
+      return {
+        borderClass: "border-l-orange-500",
+        labelClass: "text-orange-700",
+      };
+    case "not_qualified":
+      return {
+        borderClass: "border-l-red-500",
+        labelClass: "text-red-700",
+      };
+    case "pending":
+      return {
+        borderClass: "border-l-zinc-400",
+        labelClass: "text-zinc-600",
+      };
+  }
+}
+
 function deriveLeadSummary(messages: MessagePayload[]): {
   listing: string;
-  qualified: boolean;
+  qualificationTier: QualificationTier;
 } {
-  const agentText = messages
-    .filter((m) => m.role === "agent")
-    .map((m) => (m.message ?? "").toLowerCase())
-    .join(" ");
-
-  const negative =
-    /\bnon\s+qualifi|pas\s+qualifi|non\s+éligible|pas\s+éligible|ne\s+(?:vous\s+)?qualif|refus|inéligible|ne\s+correspond(?:ent)?\s+pas/i.test(
-      agentText,
-    );
-  const positive =
-    /\bqualifié|éligible|correspond(?:ent)?\s+à\s+vos|validé|vous\s+pouvez\s+(?:procéder|continuer)|c’est\s+bon\s+pour/i.test(
-      agentText,
-    );
-
-  let qualified = false;
-  if (negative) qualified = false;
-  else if (positive) qualified = true;
-  else qualified = false;
-
-  const userChunks = messages
-    .filter((m) => m.role === "user")
-    .map((m) => (m.message ?? "").trim())
-    .filter(Boolean);
-  const rawListing = userChunks.join(" ").trim();
-  const listing =
-    rawListing.length > 0
-      ? rawListing.length > 140
-        ? `${rawListing.slice(0, 137)}…`
-        : rawListing
-      : "Aucune annonce précisée dans l’échange.";
-
-  return { listing, qualified };
+  return {
+    listing: deriveDiscussedListing(messages),
+    qualificationTier: deriveQualificationTier(messages),
+  };
 }
 
 function VoicePanel() {
@@ -117,6 +191,9 @@ function VoicePanel() {
 
   const summary = sessionCompleted
     ? deriveLeadSummary(capturedMessages)
+    : null;
+  const summaryStyles = summary
+    ? qualificationCardStyles(summary.qualificationTier)
     : null;
 
   return (
@@ -204,13 +281,9 @@ function VoicePanel() {
                 )}
               </div>
 
-              {summary ? (
+              {summary && summaryStyles ? (
                 <div
-                  className={`rounded-xl border-y border-r border-black/[0.06] bg-white p-4 text-left shadow-sm ring-1 ring-black/[0.03] ${
-                    summary.qualified
-                      ? "border-l-4 border-l-emerald-500"
-                      : "border-l-4 border-l-red-500"
-                  }`}
+                  className={`rounded-xl border-y border-r border-black/[0.06] bg-white p-4 text-left shadow-sm ring-1 ring-black/[0.03] border-l-4 ${summaryStyles.borderClass}`}
                   aria-label="Résumé du lead"
                 >
                   <h2 className="text-xs font-semibold uppercase tracking-wide text-[#1A1A1A]/50">
@@ -230,13 +303,9 @@ function VoicePanel() {
                         Qualification
                       </dt>
                       <dd
-                        className={`mt-0.5 font-semibold ${
-                          summary.qualified
-                            ? "text-emerald-700"
-                            : "text-red-700"
-                        }`}
+                        className={`mt-0.5 font-semibold ${summaryStyles.labelClass}`}
                       >
-                        {summary.qualified ? "Qualifié" : "Non qualifié"}
+                        {QUALIFICATION_LABELS[summary.qualificationTier]}
                       </dd>
                     </div>
                   </dl>
