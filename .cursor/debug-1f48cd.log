@@ -1,0 +1,3 @@
+{"sessionId":"1f48cd","location":"WebRTCConnection.js:DataReceived","message":"raw error-type data message","data":{"topKeys":["type","message"],"hasErrorEvent":false},"timestamp":1775149340116,"hypothesisId":"B"}
+{"sessionId":"1f48cd","location":"BaseConversation.js:handleErrorEvent","message":"handleErrorEvent entry","data":{"eventKeys":["type","message"],"hasErrorEvent":false,"errorEventKeys":[]},"timestamp":1775149340117,"hypothesisId":"A"}
+{"sessionId":"1f48cd","runId":"post-fix","location":"BaseConversation.js:handleErrorEvent","message":"normalized flat error payload","data":{},"timestamp":1775149340118,"hypothesisId":"verify"}

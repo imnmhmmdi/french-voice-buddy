@@ -1,0 +1,63 @@
+diff --git a/node_modules/@elevenlabs/client/dist/BaseConversation.js b/node_modules/@elevenlabs/client/dist/BaseConversation.js
+index 2280124..e7fabd4 100644
+--- a/node_modules/@elevenlabs/client/dist/BaseConversation.js
++++ b/node_modules/@elevenlabs/client/dist/BaseConversation.js
+@@ -238,8 +238,27 @@ export class BaseConversation {
+         }
+     }
+     handleErrorEvent(event) {
+-        const errorType = event.error_event.error_type;
+-        const message = event.error_event.message || event.error_event.reason || "Unknown error";
++        // #region agent log
++        fetch('http://127.0.0.1:7451/ingest/b43ff730-4c78-4fb2-87e8-1168dbe23395',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1f48cd'},body:JSON.stringify({sessionId:'1f48cd',location:'BaseConversation.js:handleErrorEvent',message:'handleErrorEvent entry',data:{eventKeys:event&&typeof event==='object'?Object.keys(event):[],hasErrorEvent:event?.error_event!=null,errorEventKeys:event?.error_event&&typeof event.error_event==='object'?Object.keys(event.error_event):[]},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
++        // #endregion
++        const errorEvent = event.error_event ??
++            (typeof event?.message === "string"
++                ? { message: event.message }
++                : undefined);
++        if (!errorEvent) {
++            this.onError("Server error: Unknown error", {
++                errorType: undefined,
++                details: { malformedErrorEvent: true },
++            });
++            return;
++        }
++        // #region agent log
++        if (!event.error_event && typeof event?.message === "string") {
++            fetch('http://127.0.0.1:7451/ingest/b43ff730-4c78-4fb2-87e8-1168dbe23395',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1f48cd'},body:JSON.stringify({sessionId:'1f48cd',runId:'post-fix',location:'BaseConversation.js:handleErrorEvent',message:'normalized flat error payload',data:{},timestamp:Date.now(),hypothesisId:'verify'})}).catch(()=>{});
++        }
++        // #endregion
++        const errorType = errorEvent.error_type;
++        const message = errorEvent.message || errorEvent.reason || "Unknown error";
+         if (errorType === "max_duration_exceeded") {
+             this.endSessionWithDetails({
+                 reason: "error",
+@@ -250,9 +269,9 @@ export class BaseConversation {
+         }
+         this.onError(`Server error: ${message}`, {
+             errorType,
+-            code: event.error_event.code,
+-            debugMessage: event.error_event.debug_message,
+-            details: event.error_event.details,
++            code: errorEvent.code,
++            debugMessage: errorEvent.debug_message,
++            details: errorEvent.details,
+         });
+     }
+     onMessage = async (parsedEvent) => {
+diff --git a/node_modules/@elevenlabs/client/dist/utils/WebRTCConnection.js b/node_modules/@elevenlabs/client/dist/utils/WebRTCConnection.js
+index 860d226..1ed6448 100644
+--- a/node_modules/@elevenlabs/client/dist/utils/WebRTCConnection.js
++++ b/node_modules/@elevenlabs/client/dist/utils/WebRTCConnection.js
+@@ -247,6 +247,11 @@ export class WebRTCConnection extends BaseConnection {
+         this.room.on(RoomEvent.DataReceived, (payload, _participant) => {
+             try {
+                 const message = JSON.parse(new TextDecoder().decode(payload));
++                // #region agent log
++                if (message?.type === "error") {
++                    fetch('http://127.0.0.1:7451/ingest/b43ff730-4c78-4fb2-87e8-1168dbe23395',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1f48cd'},body:JSON.stringify({sessionId:'1f48cd',location:'WebRTCConnection.js:DataReceived',message:'raw error-type data message',data:{topKeys:message&&typeof message==='object'?Object.keys(message):[],hasErrorEvent:message?.error_event!=null,error_event:message?.error_event},timestamp:Date.now(),hypothesisId:'B'})}).catch(()=>{});
++                }
++                // #endregion
+                 // Filter out audio messages for WebRTC - they're handled via audio tracks
+                 if (message.type === "audio") {
+                     return;
