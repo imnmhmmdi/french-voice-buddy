@@ -61,7 +61,7 @@ function firstDefined(...vals: (string | undefined)[]): string {
   return "";
 }
 
-function extractFromConversationData(data: UnknownRecord) {
+function extractListingAndQualificationFromConversationData(data: UnknownRecord) {
   const client = data.conversation_initiation_client_data as UnknownRecord | undefined;
   const dynamic = (client?.dynamic_variables as UnknownRecord) ?? {};
   const analysis = data.analysis as UnknownRecord | undefined;
@@ -72,23 +72,6 @@ function extractFromConversationData(data: UnknownRecord) {
     firstDefined(...keys.map((k) => stringValue(dynamic[k])));
   const fromDc = (keys: string[]) =>
     firstDefined(...keys.map((k) => stringValue(dataCollection[k])));
-
-  const callerName = fromDyn([
-    "caller_name",
-    "user_name",
-    "name",
-    "caller",
-    "nom",
-  ]) || fromDc(["caller_name", "name", "nom", "user_name"]);
-
-  const phone =
-    fromDyn([
-      "phone",
-      "phone_number",
-      "caller_phone",
-      "telephone",
-      "numero",
-    ]) || fromDc(["phone", "phone_number", "caller_phone", "telephone"]);
 
   const listing =
     fromDyn([
@@ -109,7 +92,134 @@ function extractFromConversationData(data: UnknownRecord) {
     ]) ||
     fromDc(["qualification", "qualification_result", "result"]);
 
-  return { callerName, phone, listing, qualification };
+  return { listing, qualification };
+}
+
+/** Flatten transcript-like content from ElevenLabs post-call payload (shape varies by API version). */
+function transcriptTextFromPayload(root: UnknownRecord): string {
+  const parts: string[] = [];
+
+  const appendTurnArray = (arr: unknown) => {
+    if (!Array.isArray(arr)) return;
+    for (const item of arr) {
+      if (typeof item === "string" && item.trim()) {
+        parts.push(item.trim());
+        continue;
+      }
+      if (!item || typeof item !== "object") continue;
+      const o = item as UnknownRecord;
+      const role = stringValue(o.role) ?? stringValue(o.source);
+      const text =
+        stringValue(o.message) ??
+        stringValue(o.text) ??
+        stringValue(o.content) ??
+        stringValue(o.transcript);
+      if (text) parts.push(role ? `${role}: ${text}` : text);
+    }
+  };
+
+  const tryObject = (obj: UnknownRecord | undefined) => {
+    if (!obj) return;
+    for (const key of [
+      "transcript",
+      "full_transcript",
+      "conversation_transcript",
+    ]) {
+      const v = obj[key];
+      if (typeof v === "string" && v.trim()) parts.push(v.trim());
+      else appendTurnArray(v);
+    }
+    appendTurnArray(obj.messages);
+    appendTurnArray(obj.turns);
+    const conv = obj.conversation as UnknownRecord | undefined;
+    if (conv) tryObject(conv);
+    const meta = obj.metadata as UnknownRecord | undefined;
+    if (meta) tryObject(meta);
+  };
+
+  const data = (root.data as UnknownRecord) ?? {};
+  tryObject(data);
+  tryObject(data.analysis as UnknownRecord | undefined);
+  tryObject(root);
+
+  return parts.join("\n");
+}
+
+function normalizeFrenchPhoneToE164(raw: string): string | null {
+  let digits = raw.replace(/\D/g, "");
+  if (digits.startsWith("00")) digits = digits.slice(2);
+
+  if (digits.length === 10 && /^0[67]\d{8}$/.test(digits)) {
+    return `+33${digits.slice(1)}`;
+  }
+  if (digits.length === 11 && /^33[67]\d{8}$/.test(digits)) {
+    return `+${digits}`;
+  }
+  return null;
+}
+
+function extractFrenchPhoneFromTranscript(text: string): string {
+  if (!text.trim()) return "";
+
+  type Cand = { e164: string; score: number };
+  const candidates: Cand[] = [];
+  const seen = new Set<string>();
+  const add = (raw: string, score: number) => {
+    const e164 = normalizeFrenchPhoneToE164(raw);
+    if (e164 && !seen.has(e164)) {
+      seen.add(e164);
+      candidates.push({ e164, score });
+    }
+  };
+
+  const intlSpaced = /\+33[\s.\-]*[67](?:[\s.\-]*\d){8}\b/gi;
+  for (const m of text.matchAll(intlSpaced)) add(m[0], 100);
+
+  const localSpaced = /\b0[67](?:[\s.\-]*\d){8}\b/gi;
+  for (const m of text.matchAll(localSpaced)) add(m[0], 95);
+
+  const localCompact = /\b0[67]\d{8}\b/g;
+  for (const m of text.matchAll(localCompact)) add(m[0], 90);
+
+  const intlCompact = /\+33[67]\d{8}\b/g;
+  for (const m of text.matchAll(intlCompact)) add(m[0], 100);
+
+  // Spoken / ASR: isolated digits with separators, e.g. "0 6 1 2 3 4 5 6 7 8"
+  const spokenRun = /(?:\b\d\b[\s,;]+){9,}\b\d\b/g;
+  for (const m of text.matchAll(spokenRun)) {
+    const collapsed = m[0].replace(/\D/g, "");
+    if (collapsed.length >= 10) {
+      const ten = collapsed.slice(0, 10);
+      if (/^0[67]\d{8}$/.test(ten)) add(collapsed, 70);
+    }
+    if (collapsed.length >= 11 && /^33[67]\d{8}$/.test(collapsed.slice(0, 11))) {
+      add(collapsed.slice(0, 11), 72);
+    }
+  }
+
+  candidates.sort((a, b) => b.score - a.score);
+  return candidates[0]?.e164 ?? "";
+}
+
+function extractCallerNameFromTranscript(text: string): string {
+  if (!text.trim()) return "";
+
+  const patterns: RegExp[] = [
+    /\bmerci\s+(?!beaucoup\b|bien\b)\s*([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'\-]*(?:\s+[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'\-]*){0,4})(?=\s*[.!?,]|\s*$|\n)/gi,
+    /\bthank\s+you\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'\-]*(?:\s+[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'\-]*){0,4})(?=\s*[.!?,]|\s*$|\n)/gi,
+    /\bmerci\s+(?:madame|monsieur|mme|m\.)\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'\-]*(?:\s+[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'\-]*){0,2})\b/gi,
+  ];
+
+  let last = "";
+  for (const re of patterns) {
+    re.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text)) !== null) {
+      const name = m[1]?.trim() ?? "";
+      if (name.length >= 2 && name.length <= 80) last = name;
+    }
+  }
+  return last;
 }
 
 function normalizeWhatsAppAddress(addr: string): string {
@@ -143,14 +253,23 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  console.log("ElevenLabs post-call webhook payload:", JSON.stringify(payload, null, 2));
+  console.log(
+    "[post-call] Full ElevenLabs webhook payload:",
+    JSON.stringify(payload, null, 2),
+  );
 
   const root = payload as UnknownRecord;
   const data = (root.data as UnknownRecord) ?? {};
-  const { callerName, phone, listing, qualification } =
-    extractFromConversationData(data);
+  const { listing, qualification } =
+    extractListingAndQualificationFromConversationData(data);
 
-  console.log("Extracted:", {
+  const transcriptText = transcriptTextFromPayload(root);
+  const phone = extractFrenchPhoneFromTranscript(transcriptText);
+  const callerName = extractCallerNameFromTranscript(transcriptText);
+
+  console.log("[post-call] Parsed from transcript:", {
+    transcriptLength: transcriptText.length,
+    transcriptPreview: transcriptText.slice(0, 500),
     callerName,
     phone,
     listing,
