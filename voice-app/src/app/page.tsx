@@ -1,7 +1,6 @@
 "use client";
 
 import type { MessagePayload } from "@elevenlabs/types";
-import Image from "next/image";
 import { useCallback, useRef, useState } from "react";
 import { ConversationProvider, useConversation } from "@elevenlabs/react";
 
@@ -119,6 +118,30 @@ function deriveLeadSummary(messages: MessagePayload[]): {
   };
 }
 
+/** Strip emotion / stage tags like [happy] from agent transcript lines for display. */
+function displayTranscriptText(
+  text: string | undefined,
+  role: MessagePayload["role"],
+): string {
+  if (!text) return "";
+  if (role !== "agent") return text;
+  return text
+    .replace(/\[[^\]]*\]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function LeboncoinWordmark() {
+  return (
+    <span
+      className="inline-block text-[28px] font-bold lowercase leading-none tracking-tight text-[#FF6E14]"
+      aria-label="leboncoin"
+    >
+      leboncoin
+    </span>
+  );
+}
+
 function VoicePanel() {
   const [capturedMessages, setCapturedMessages] = useState<MessagePayload[]>(
     [],
@@ -197,31 +220,27 @@ function VoicePanel() {
     : null;
 
   return (
-    <div className="flex min-h-full flex-1 flex-col">
-      <div className="flex flex-1 flex-col items-center px-4 py-8 sm:px-6 sm:py-12 lg:py-10">
-        <div className="w-full max-w-5xl rounded-2xl border border-black/[0.06] bg-white px-5 py-8 shadow-sm sm:px-8 sm:py-10">
-          <header className="mb-8 text-center sm:mb-10">
-            <div className="mb-5 flex justify-center">
-              <Image
-                src="/logo.png"
-                alt="leboncoin"
-                width={150}
-                height={40}
-                className="h-auto w-[150px] object-contain"
-                priority
-              />
-            </div>
-            <h1 className="text-2xl font-semibold tracking-tight text-[#1A1A1A] sm:text-[1.65rem]">
-              Assistant Location Leboncoin
-            </h1>
-            <p className="mt-3 text-[15px] leading-relaxed text-[#1A1A1A]/72">
-              Posez vos questions sur un bien, vérifiez votre éligibilité — en
-              français ou en anglais.
-            </p>
-          </header>
+    <div className="flex min-h-full flex-1 flex-col bg-white">
+      <div className="mx-auto flex w-full max-w-[900px] flex-1 flex-col px-4 py-10 sm:px-6 sm:py-12">
+        <header className="mb-10 text-center">
+          <div className="mb-4 flex justify-center">
+            <LeboncoinWordmark />
+          </div>
+          <h1 className="text-2xl font-semibold tracking-tight text-[#1A1A1A] sm:text-[1.65rem]">
+            Assistant Location Leboncoin
+          </h1>
+          <p className="mx-auto mt-3 max-w-xl text-[15px] leading-relaxed text-[#1A1A1A]/65">
+            Posez vos questions sur un bien, vérifiez votre éligibilité — en
+            français ou en anglais.
+          </p>
+        </header>
 
-          <div className="flex flex-col gap-8 lg:flex-row lg:items-start lg:gap-10">
-            <div className="flex flex-col items-center gap-5 lg:w-[min(100%,280px)] lg:shrink-0">
+        <div className="flex flex-col gap-8 md:flex-row md:items-start md:gap-10">
+          <div className="flex flex-col items-center gap-3 md:items-start md:pt-1">
+            <div className="relative inline-flex">
+              {sessionLive ? (
+                <span className="demo-cta-pulse-ring" aria-hidden />
+              ) : null}
               <button
                 type="button"
                 onClick={handlePrimaryClick}
@@ -231,97 +250,99 @@ function VoicePanel() {
                     ? "Terminer la session vocale"
                     : "Commencer la session vocale"
                 }
-                className={`min-w-[200px] rounded-full bg-[#FF6E14] px-10 py-3.5 text-base font-semibold text-white shadow-sm transition hover:bg-[#E65F0F] active:scale-[0.99] disabled:pointer-events-none disabled:opacity-65 ${
-                  sessionLive ? "mic-pulse-active" : ""
+                className={`relative z-10 rounded-full px-12 py-4 text-base font-semibold text-white shadow-[0_4px_14px_-4px_rgba(0,0,0,0.25)] transition hover:shadow-[0_6px_20px_-4px_rgba(0,0,0,0.28)] active:scale-[0.99] disabled:pointer-events-none disabled:opacity-65 ${
+                  sessionLive
+                    ? "bg-red-600 hover:bg-red-700"
+                    : "bg-[#FF6E14] hover:bg-[#E65F0F]"
                 }`}
               >
                 {buttonLabel}
               </button>
-
-              <p className="text-center text-sm font-medium text-[#1A1A1A]/55">
-                {statusLabel}
-              </p>
-
-              {sessionCompleted ? (
-                <button
-                  type="button"
-                  onClick={handleNewConversation}
-                  className="rounded-full border border-[#1A1A1A]/15 bg-[#FAFAFA] px-6 py-2.5 text-sm font-semibold text-[#1A1A1A]/85 transition hover:bg-[#F0F0F0] active:scale-[0.99]"
-                >
-                  Nouvelle conversation
-                </button>
-              ) : null}
             </div>
 
-            <div className="min-w-0 flex-1 space-y-4">
-              <div
-                className="w-full rounded-xl border border-black/[0.08] bg-[#FAFAFA] px-4 py-3 text-left text-sm text-[#1A1A1A]/80 min-h-[120px] lg:min-h-[200px]"
-                aria-live="polite"
+            <p className="max-w-[220px] text-center text-xs italic text-zinc-500 md:text-left">
+              {statusLabel}
+            </p>
+
+            {sessionCompleted ? (
+              <button
+                type="button"
+                onClick={handleNewConversation}
+                className="mt-2 rounded-lg border border-zinc-200 bg-transparent px-4 py-2 text-sm font-medium text-zinc-600 transition hover:border-zinc-300 hover:bg-zinc-50 active:scale-[0.99]"
               >
-                {capturedMessages.length === 0 ? (
-                  <p className="text-[#1A1A1A]/45">
-                    La conversation apparaîtra ici...
-                  </p>
-                ) : (
-                  <ul className="flex flex-col gap-2">
-                    {capturedMessages.map((entry, index) => (
-                      <li
-                        key={`${entry.event_id ?? index}-${entry.role}-${index}`}
-                        className="rounded-lg bg-white/80 px-3 py-2 text-[#1A1A1A]"
-                      >
-                        <span className="text-xs font-semibold uppercase tracking-wide text-[#FF6E14]/90">
-                          {entry.role === "user" ? "Vous" : "Assistant"}
-                        </span>
-                        <p className="mt-1 whitespace-pre-wrap">
-                          {entry.message}
-                        </p>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
+                Nouvelle conversation
+              </button>
+            ) : null}
+          </div>
 
-              {summary && summaryStyles ? (
-                <div
-                  className={`rounded-xl border-y border-r border-black/[0.06] bg-white p-4 text-left shadow-sm ring-1 ring-black/[0.03] border-l-4 ${summaryStyles.borderClass}`}
-                  aria-label="Résumé du lead"
-                >
-                  <h2 className="text-xs font-semibold uppercase tracking-wide text-[#1A1A1A]/50">
-                    Lead Summary
-                  </h2>
-                  <dl className="mt-3 space-y-2 text-sm">
-                    <div>
-                      <dt className="text-[11px] font-medium uppercase tracking-wide text-[#1A1A1A]/45">
-                        Annonce discutée
-                      </dt>
-                      <dd className="mt-0.5 text-[#1A1A1A]/90">
-                        {summary.listing}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-[11px] font-medium uppercase tracking-wide text-[#1A1A1A]/45">
-                        Qualification
-                      </dt>
-                      <dd
-                        className={`mt-0.5 font-semibold ${summaryStyles.labelClass}`}
-                      >
-                        {QUALIFICATION_LABELS[summary.qualificationTier]}
-                      </dd>
-                    </div>
-                  </dl>
-                  <p className="mt-3 border-t border-black/[0.06] pt-3 text-xs leading-relaxed text-[#1A1A1A]/55">
-                    Les détails complets sont disponibles dans le tableau de bord
-                    agent.
-                  </p>
-                </div>
-              ) : null}
+          <div className="min-w-0 flex-1 space-y-4">
+            <div
+              className="max-h-[500px] overflow-y-auto rounded-xl border border-zinc-200/90 bg-white px-4 py-3 text-left text-sm text-[#1A1A1A]/85 shadow-[0_1px_2px_rgba(0,0,0,0.04)] min-h-[140px] md:min-h-[200px]"
+              aria-live="polite"
+            >
+              {capturedMessages.length === 0 ? (
+                <p className="py-6 text-zinc-400">
+                  La conversation apparaîtra ici...
+                </p>
+              ) : (
+                <ul className="flex flex-col gap-3">
+                  {capturedMessages.map((entry, index) => (
+                    <li
+                      key={`${entry.event_id ?? index}-${entry.role}-${index}`}
+                      className="rounded-lg border border-zinc-100 bg-zinc-50/80 px-3 py-2.5 text-[#1A1A1A]"
+                    >
+                      <span className="text-[11px] font-semibold uppercase tracking-wide text-[#FF6E14]/90">
+                        {entry.role === "user" ? "Vous" : "Assistant"}
+                      </span>
+                      <p className="mt-1 whitespace-pre-wrap">
+                        {displayTranscriptText(entry.message, entry.role)}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
+
+            {summary && summaryStyles ? (
+              <div
+                className={`rounded-xl border border-zinc-200/90 bg-white p-4 text-left shadow-[0_1px_2px_rgba(0,0,0,0.04)] border-l-4 ${summaryStyles.borderClass}`}
+                aria-label="Résumé du lead"
+              >
+                <h2 className="text-xs font-semibold uppercase tracking-wide text-[#1A1A1A]/50">
+                  Lead Summary
+                </h2>
+                <dl className="mt-3 space-y-2 text-sm">
+                  <div>
+                    <dt className="text-[11px] font-medium uppercase tracking-wide text-[#1A1A1A]/45">
+                      Annonce discutée
+                    </dt>
+                    <dd className="mt-0.5 text-[#1A1A1A]/90">
+                      {summary.listing}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-[11px] font-medium uppercase tracking-wide text-[#1A1A1A]/45">
+                      Qualification
+                    </dt>
+                    <dd
+                      className={`mt-0.5 font-semibold ${summaryStyles.labelClass}`}
+                    >
+                      {QUALIFICATION_LABELS[summary.qualificationTier]}
+                    </dd>
+                  </div>
+                </dl>
+                <p className="mt-3 border-t border-zinc-100 pt-3 text-xs leading-relaxed text-[#1A1A1A]/55">
+                  Les détails complets sont disponibles dans le tableau de bord
+                  agent.
+                </p>
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
 
-      <footer className="mt-auto border-t border-black/[0.06] bg-[#F5F5F5]/80 px-4 py-4 text-center text-[11px] text-[#1A1A1A]/40 sm:text-xs">
-        Prototype MVP — Propulsé par ElevenLabs × Claude
+      <footer className="mt-auto px-4 py-6 text-center text-[11px] text-zinc-400 sm:text-xs">
+        Prototype MVP — Propulsé par ElevenLabs
       </footer>
     </div>
   );

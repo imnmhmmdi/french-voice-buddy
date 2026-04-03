@@ -3,7 +3,7 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --background: #f5f5f5;
+  --background: #ffffff;
   --foreground: #1a1a1a;
   --leboncoin-orange: #ff6e14;
 }
@@ -26,22 +26,25 @@ body {
   font-family: var(--font-geist-sans), system-ui, sans-serif;
 }
 
-@keyframes mic-pulse-ring {
-  0%,
-  100% {
-    box-shadow:
-      0 0 0 0 rgb(255 110 20 / 0.35),
-      0 8px 24px -8px rgb(255 110 20 / 0.25);
+@keyframes demo-cta-pulse-ring {
+  0% {
+    transform: scale(1);
+    opacity: 0.5;
   }
-  50% {
-    box-shadow:
-      0 0 0 12px rgb(255 110 20 / 0),
-      0 8px 24px -8px rgb(255 110 20 / 0.2);
+  70%,
+  100% {
+    transform: scale(1.45);
+    opacity: 0;
   }
 }
 
-.mic-pulse-active {
-  animation: mic-pulse-ring 2s ease-in-out infinite;
+.demo-cta-pulse-ring {
+  position: absolute;
+  inset: -6px;
+  border-radius: 9999px;
+  border: 2px solid rgb(220 38 38 / 0.45);
+  animation: demo-cta-pulse-ring 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  pointer-events: none;
 }
 
 /* Range inputs: consistent thumb size for touch (iOS Safari + Chrome) */
